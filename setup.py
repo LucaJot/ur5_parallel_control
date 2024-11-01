@@ -19,7 +19,7 @@ setup(
     tests_require=["pytest"],
     entry_points={
         "console_scripts": [
-            "basic_control_test = ur5_parallel_control.ur5_basic_control_test:main",
+            "basic_control = ur5_parallel_control.ur5_basic_control:main",
         ],
     },
 )
