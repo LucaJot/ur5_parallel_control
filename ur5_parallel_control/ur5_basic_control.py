@@ -12,7 +12,7 @@ from builtin_interfaces.msg import Duration
 
 
 class Ur5JointController(Node):
-    def __init__(self, v_cm=25, f_update=60):  # Max v = 25 cm/s
+    def __init__(self, v_cm=25, f_update=1):  # Max v = 25 cm/s
         super().__init__("position_control_node")
         # self.lock = threading.Lock()
         self.d_t = 1 / f_update  # Time between updates
@@ -127,8 +127,10 @@ class Ur5JointController(Node):
         # Create a JointTrajectory message
         jt_msg = JointTrajectory()
         jt_msg.joint_names = self.joint_names
+        jt_msg.header.stamp = self.get_clock().now().to_msg()
         jt_point = JointTrajectoryPoint()
         jt_point.positions = new_target
+        jt_point.velocities = [0.0] * 6
         jt_point.time_from_start = Duration(nanosec=int(duration * 1e9))
         jt_msg.points.append(jt_point)
 
