@@ -20,6 +20,7 @@ setup(
     entry_points={
         "console_scripts": [
             "basic_control = ur5_parallel_control.ur5_basic_control:main",
+            "basic_control_fpc = ur5_parallel_control.ur5_basic_control_fpc:main",
             "keyboard_command_publisher = ur5_parallel_control.keyboard_command_publisher:main",
         ],
     },
