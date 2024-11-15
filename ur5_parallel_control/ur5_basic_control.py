@@ -12,13 +12,13 @@ from builtin_interfaces.msg import Duration
 
 
 class Ur5JointController(Node):
-    def __init__(self, v_cm=25, f_update=1):  # Max v = 25 cm/s
+    def __init__(self, v_cm=20, f_update=10):  # Max v = 35 cm/s
         super().__init__("position_control_node")
         # self.lock = threading.Lock()
         self.d_t = 1 / f_update  # Time between updates
         # Check if max speed is within limits (longest link = 44 cm)
-        if v_cm > 25:
-            self.v_cm = 0.25
+        if v_cm > 35:
+            self.v_cm = 0.35
             self.get_logger().warn(
                 "Max speed is too high. Setting Max speed v_cm = 25 cm/s"
             )
@@ -91,6 +91,8 @@ class Ur5JointController(Node):
         # Denormalize the angles
         angle_delta = [norm_val * self.d_phi for norm_val in normalized_delta]
         self.current_angle_delta = angle_delta
+        # Log the received joint delta
+        self.get_logger().info(f"Received joint delta: {angle_delta}")
 
     def send_joint_command(
         self, duration: float = 0
@@ -100,20 +102,14 @@ class Ur5JointController(Node):
         # If no duration is provided, use the default duration
         if duration == 0:
             duration = self.d_t
-        # Get the most recent joint positions dict
-        self.current_joint_positions
         # If no joint positions received yet abort
         if self.current_joint_positions is None:
             return
+        # If no joint delta received dont send commands
+        if sum(self.current_angle_delta) == 0:
+            return
 
         # Calculate the new target joint positions by adding the delta to the current joint positions
-        intermidiate_target = [
-            delta / 2 + position
-            for delta, position in zip(
-                self.current_angle_delta, self.current_joint_positions
-            )
-        ]
-
         new_target = [
             delta + position
             for delta, position in zip(
@@ -131,6 +127,7 @@ class Ur5JointController(Node):
         jt_point = JointTrajectoryPoint()
         jt_point.positions = new_target
         jt_point.velocities = [0.0] * 6
+        jt_point.accelerations = [0.0] * 6
         jt_point.time_from_start = Duration(nanosec=int(duration * 1e9))
         jt_msg.points.append(jt_point)
 
