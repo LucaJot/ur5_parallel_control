@@ -81,15 +81,24 @@ class Ur5JointController(Node):
             for joint in self.joint_names  # use dict to get the values in the order of joint_names
         ]
 
-    def set_joint_delta(self, msg: Float64MultiArray):
+    def receive_joint_delta(self, msg: Float64MultiArray):
+        """_summary_
+        Function to receive the joint delta command from the agent.
+        """
+        normalized_delta: list[float] = msg.data
+        self.set_joint_delta(normalized_delta)
 
-        normalized_delta = msg.data
-        # Check if the received message has the correct length
-        if normalized_delta and (len(normalized_delta) != 6):
+        return self.current_angle_delta
+
+    def set_joint_delta(self, normalized_delta: list[float]):
+        # Check if the received data has the correct length
+        if len(normalized_delta) != 6:
             self.get_logger().warn("Received invalid joint delta command")
             return
         # Denormalize the angles
-        angle_delta = [norm_val * self.d_phi for norm_val in normalized_delta]
+        angle_delta = Float64MultiArray()
+        angle_delta.data = [norm_val * self.d_phi for norm_val in normalized_delta]
+
         self.current_angle_delta = angle_delta
         # Log the received joint delta
         self.get_logger().info(f"Received joint delta: {angle_delta}")
