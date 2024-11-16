@@ -10,6 +10,8 @@ from std_msgs.msg import Float64MultiArray
 import threading
 from builtin_interfaces.msg import Duration
 
+# TODO Implement Gripper control
+
 
 class Ur5JointController(Node):
     def __init__(self, v_cm=20, f_update=80):  # Max v = 35 cm/s
@@ -43,9 +45,9 @@ class Ur5JointController(Node):
         )
 
         # Delta list to store the most recent control command
-        self.current_angle_delta: Float64MultiArray = [0.0] * 6
+        self.current_angle_delta: list[float] = [0.0] * 6
         # Current joint positions as received from the joint state topic
-        self.current_joint_positions: list[float] = None
+        self.current_joint_positions: list[float] = None  # type: ignore
 
         # Set the initial joint positions to a default pose  TODO (implement reset to home position)
         self.init_joint_positions: list[float] = [
@@ -70,9 +72,10 @@ class Ur5JointController(Node):
         # Set update rate for the joint command
         self.update_timer = self.create_timer(self.d_t, self.send_joint_command)
 
-    def joint_state_callback(self, msg: JointState):
-        # Lock the thread when updating the joint positions
+        # Data received flag
+        self.angle_delta_received = True
 
+    def joint_state_callback(self, msg: JointState):  # TODO Add gripper "joint"
         self.joint_state = msg
         # Create a dict to sort the values in defined order
         name_val_mapping = dict(zip(msg.name, msg.position))
@@ -81,11 +84,17 @@ class Ur5JointController(Node):
             for joint in self.joint_names  # use dict to get the values in the order of joint_names
         ]
 
+    def get_joint_positions(self) -> list[float]:
+        """_summary_
+        Function to return the current joint positions of the UR5 robot.
+        """
+        return self.current_joint_positions
+
     def receive_joint_delta(self, msg: Float64MultiArray):
         """_summary_
         Function to receive the joint delta command from the agent.
         """
-        normalized_delta: list[float] = msg.data
+        normalized_delta: list[float] = msg.data  # type: ignore
         self.set_joint_delta(normalized_delta)
 
         return self.current_angle_delta
@@ -96,12 +105,9 @@ class Ur5JointController(Node):
             self.get_logger().warn("Received invalid joint delta command")
             return
         # Denormalize the angles
-        angle_delta = Float64MultiArray()
-        angle_delta.data = [norm_val * self.d_phi for norm_val in normalized_delta]
+        angle_delta = [norm_val * self.d_phi for norm_val in normalized_delta]
 
         self.current_angle_delta = angle_delta
-        # Log the received joint delta
-        self.get_logger().info(f"Received joint delta: {angle_delta}")
 
     def send_joint_command(
         self, duration: float = 0
@@ -117,7 +123,9 @@ class Ur5JointController(Node):
             return
         # If no joint delta received dont send commands
         if sum(self.current_angle_delta) == 0:
-            self.get_logger().warn("No joint delta received - idle")
+            if self.angle_delta_received:
+                self.get_logger().warn("No joint delta received - idle")
+                self.angle_delta_received = False
             return
 
         # Calculate the new target joint positions by adding the delta to the current joint positions
@@ -134,8 +142,6 @@ class Ur5JointController(Node):
         # Create a ForwardPositionController message
         new_target_msg = Float64MultiArray()
         new_target_msg.data = new_target
-
-        self.get_logger().info(f"Sending joint command: {new_target}")
 
         # Publish the trajectory message
         self.forward_pos_pub.publish(new_target_msg)
