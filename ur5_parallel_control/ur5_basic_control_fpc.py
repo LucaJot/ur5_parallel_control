@@ -10,7 +10,7 @@ from std_msgs.msg import Float64MultiArray
 import threading
 from builtin_interfaces.msg import Duration
 
-# TODO Implement Gripper control
+from ur_msgs.srv import SetIO
 
 
 class Ur5JointController(Node):
@@ -75,7 +75,15 @@ class Ur5JointController(Node):
         # Data received flag
         self.angle_delta_received = True
 
-    def joint_state_callback(self, msg: JointState):  # TODO Add gripper "joint"
+        # Gripper init
+        self.cli = self.create_client(SetIO, "/io_and_status_controller/set_io")
+        while not self.cli.wait_for_service(timeout_sec=1.0):
+            self.get_logger().info("Waiting for gripper /set_io service...")
+        self.get_logger().info("/set_io service is available.")
+
+        self.current_gripper_state = False
+
+    def joint_state_callback(self, msg: JointState):
         self.joint_state = msg
         # Create a dict to sort the values in defined order
         name_val_mapping = dict(zip(msg.name, msg.position))
@@ -88,7 +96,11 @@ class Ur5JointController(Node):
         """_summary_
         Function to return the current joint positions of the UR5 robot.
         """
-        return self.current_joint_positions
+        all_joint_positions = self.current_joint_positions + [
+            float(self.current_gripper_state)
+        ]
+
+        return all_joint_positions
 
     def receive_joint_delta(self, msg: Float64MultiArray):
         """_summary_
@@ -101,13 +113,14 @@ class Ur5JointController(Node):
 
     def set_joint_delta(self, normalized_delta: list[float]):
         # Check if the received data has the correct length
-        if len(normalized_delta) != 6:
+        if len(normalized_delta) != 7:
             self.get_logger().warn("Received invalid joint delta command")
             return
         # Denormalize the angles
-        angle_delta = [norm_val * self.d_phi for norm_val in normalized_delta]
+        angle_delta = [norm_val * self.d_phi for norm_val in normalized_delta[:-1]]
 
         self.current_angle_delta = angle_delta
+        self.current_gripper_state = bool(normalized_delta[-1])
 
     def send_joint_command(
         self, duration: float = 0
@@ -121,6 +134,7 @@ class Ur5JointController(Node):
         if self.current_joint_positions is None:
             self.get_logger().warn("No joint positions received yet")
             return
+        self.set_gripper(self.current_gripper_state)
         # If no joint delta received dont send commands
         if sum(self.current_angle_delta) == 0:
             if self.angle_delta_received:
@@ -143,8 +157,21 @@ class Ur5JointController(Node):
         new_target_msg = Float64MultiArray()
         new_target_msg.data = new_target
 
-        # Publish the trajectory message
+        # Publish the target joint state message
         self.forward_pos_pub.publish(new_target_msg)
+
+    def set_gripper(self, state: bool):
+        req = SetIO.Request()
+        req.fun = 1  # Digital output
+        req.pin = 16  # Gripper close pin
+        req.state = float(state)
+        future = self.cli.call_async(req)
+        rclpy.spin_until_future_complete(self, future)
+        if future.result() is not None:
+            self.current_gripper_state = state
+            self.get_logger().info(f"Tool output {req.pin} set to {state}")
+        else:
+            self.get_logger().error("Failed to call service")
 
     def enforce_joint_limits(self, target_angles: list[float]):
         """Safty layer to avoid damaging the robot by exceeding joint limits."""
